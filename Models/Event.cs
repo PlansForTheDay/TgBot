@@ -1,11 +1,4 @@
-﻿using Bot;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace botTelegram.Models
+﻿namespace botTelegram.Models
 {
     public class Event
     {
@@ -16,7 +9,11 @@ namespace botTelegram.Models
         public string Code { get; set; }
         public ICollection<Presence>? Guests { get; set; }
 
-        public Event(string title, DateTime startDate, string eventCode, Telegram.Bot.Types.User user)
+        public Event()
+        {
+
+        }
+        public Event(string title, DateTime startDate, string eventCode)
         {
             Id = DateTime.UtcNow.Ticks;
 
@@ -27,5 +24,6 @@ namespace botTelegram.Models
 
             Guests = new List<Presence>();
         }
+
     }
 }

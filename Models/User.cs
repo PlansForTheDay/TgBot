@@ -1,13 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 using botTelegram.DateBase;
-using Telegram.Bot.Types;
-using Telegram.Bot;
 
 namespace botTelegram.Models
 {
@@ -25,17 +17,17 @@ namespace botTelegram.Models
         {
 
         }
-
         public User(Telegram.Bot.Types.User user, string nick)
         {
             Id = user.Id;
             Name = (user.FirstName + " " + user.LastName).Trim();
             Nickname = nick;
             AboutMe = "Не имеется";
-            State = UserState.menu;
+            State = UserState.Menu;
 
             Events = new List<Presence>();
         }
+
 
         public void SetStateAndSave(BeerDbContext db, UserState n)
         {

@@ -1,11 +1,5 @@
-﻿using Bot;
-using botTelegram.Models;
+﻿using botTelegram.Models;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace botTelegram.DateBase
 {
@@ -27,9 +21,5 @@ namespace botTelegram.DateBase
         {
             modelBuilder.Entity<Presence>().HasKey(u => new { u.IdUser, u.IdEvent });
         }
-        //protected override void Up(MigrationBuilder migrationBuilder)
-        //{
-        //    migrationBuilder.AddColumn(,)
-        //}
     }
 }

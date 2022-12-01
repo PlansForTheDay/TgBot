@@ -2,15 +2,15 @@
 {
     public enum UserState
     {
-        menu,
-        waitingNick,
-        waitingJoinCode,
-        waitingAboutMe,
-        waitingCreateCode,
-        waitingEInfo, 
-        wainingLeaveCode, 
-        waitingDeleteCode, 
-        deleteEvent, 
-        waitingPhoto
+        Menu,
+        WaitingNick,
+        WaitingJoinCode,
+        WaitingAboutMe,
+        WaitingCreateEventCode,
+        WaitingInfoCreateEvent, 
+        WainingLeaveCode, 
+        WaitingDeleteEventCode, 
+        WaitingInfoDeleteEvent, 
+        WaitingPhoto
     }
 }

@@ -1,10 +1,5 @@
 ﻿using botTelegram.DateBase;
 using botTelegram.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Telegram.Bot.Types;
 using Telegram.Bot;
 using User = botTelegram.Models.User;
@@ -24,49 +19,50 @@ namespace botTelegram.ExtensionMethods
                 _ => "Не опознан"
             };
         }
+
+        public static bool CheckUserInDb(long id)
+        {
+            using var db = new BeerDbContext();
+            User chek = db.Users.FirstOrDefault(x => x.Id == id);
+
+            if (chek != null)
+                return true;
+            return false;
+        }
+
         public static bool RegistrationCheck(ITelegramBotClient botClient, Message message)
         {
-            User ch;
-            using (BeerDbContext db = new BeerDbContext())
+            if (CheckUserInDb(message.From.Id))
+                return true;
+
+            if (message.Text.Contains("/"))
             {
-                ch = db.Users.FirstOrDefault(x => x.Id == message.From.Id);
-            }
-            if (ch == null)
-            {
-                if (!message.Text.Contains("/"))
-                {
-                    try
-                    {
-                        string nickname = message.Text;
-                        User one = new User(message.From, nickname);
-
-                        using (BeerDbContext db = new BeerDbContext())
-                        {
-                            db.Users.Add(one);
-                            db.SaveChanges();
-                        }
-
-                        Console.WriteLine("Пользователь зарегистрирован без ошибок...\n");
-                        botClient.SendTextMessageAsync(message.Chat.Id, $"Теперь ты зарегистрирован и можешь взаимодействовать с ботом\n" +
-                            $"Тебя зовут {message.Text}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Ошибка...\n" + ex);
-                        botClient.SendTextMessageAsync(message.Chat.Id, "Произошла ошибка");
-                    }
-                }
-                else
-                {
-                    botClient.SendTextMessageAsync(message.Chat.Id, "В текущей версии бота, вы не авторизованы\n" +
-                        "Введи имя под которым тебя многие узнают");
-
-                    Console.WriteLine(message.Chat.FirstName + " | Запрос на имя отправлен...");
-                }
+                botClient.SendTextMessageAsync(message.Chat.Id, "В текущей версии бота, вы не авторизованы\nВведи имя под которым тебя многие узнают");
+                Console.WriteLine(message.Chat.FirstName + " | Запрос на имя отправлен...");
                 return false;
             }
-            else
-                return true;
+                
+            try
+            {
+                string nickname = message.Text;
+                User one = new User(message.From, nickname);
+
+                using (BeerDbContext db = new BeerDbContext())
+                {
+                    db.Users.Add(one);
+                    db.SaveChanges();
+                }
+
+                Console.WriteLine("Пользователь зарегистрирован без ошибок...\n");
+                botClient.SendTextMessageAsync(message.Chat.Id, $"Теперь ты зарегистрирован и можешь взаимодействовать с ботом\n" +
+                    $"Тебя зовут {message.Text}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Ошибка...\n" + ex);
+                botClient.SendTextMessageAsync(message.Chat.Id, "Произошла ошибка");
+            }
+            return false;
         }
     }
 }
