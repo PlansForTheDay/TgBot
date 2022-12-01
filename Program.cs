@@ -20,7 +20,6 @@ namespace Bot
 
         private static Task Update(ITelegramBotClient botClient, Update update, CancellationToken token)
         {
-
             return UpdateHendler.UpdateHandlerAsync(botClient, update, token);
         }
         private static Task Error(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
