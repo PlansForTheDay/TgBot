@@ -33,20 +33,43 @@ public class UpdateHendler
             var @event = db.Events.First(e => e.Id == presence.IdEvent);
             var user = db.Users.First(u => u.Id == presence.IdUser);
 
-            InlineKeyboardMarkup button = new(new[]
-            {
-                    new []
-                    {
-                        InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")
-                    },
-                    new []
-                    {
-                        InlineKeyboardButton.WithCallbackData("Изменить статус", $"changeEventRank:{user.Id}:{@event.Id}")
-                    }
-            });
+            //InlineKeyboardMarkup button = new(new[]
+            //{
+            //    new []
+            //    {
+            //        InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")
+            //    },
+            //    new []
+            //    {
+            //        InlineKeyboardButton.WithCallbackData("Изменить статус", $"changeEventRank:{user.Id}:{@event.Id}")
+            //    }
+            //});
 
-            await botClient.SendTextMessageAsync(message.Chat.Id,
-                //$"id: {ev.Id}\n" +
+            //if (presence.Rank == Rank.Administrator)
+            //{ 
+            //    button = +new([]
+            //        { 
+            //            InlineKeyboardButton.WithCallbackData("Редактировать мероприятие", $)
+            //        });
+            //}
+
+            InlineKeyboardMarkup button = presence.Rank switch
+            {
+                Rank.Administrator => new(new[]
+                {
+                    new [] {InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")},
+                    new [] {InlineKeyboardButton.WithCallbackData("Изменить статус", $"changeEventRank:{user.Id}:{@event.Id}")},
+                    new [] {InlineKeyboardButton.WithCallbackData("Редактировать мероприятие", $"adminButtons:{user.Id}:{@event.Id}")}
+                }),
+
+                _ => new(new[]
+                {
+                    new [] {InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")},
+                    new [] {InlineKeyboardButton.WithCallbackData("Изменить статус", $"changeEventRank:{user.Id}:{@event.Id}")}
+                })
+            };
+
+           await botClient.SendTextMessageAsync(message.Chat.Id,
                 $"Название: {@event.Title}\n" +
                 $"Дата: {@event.Start.ToShortDateString()}\n" +
                 $"Код присоединения: {@event.Code}\n" +
@@ -58,13 +81,12 @@ public class UpdateHendler
     public async static Task UpdateHandlerAsync(ITelegramBotClient botClient, Update update, CancellationToken token)
     {
         var message = new BotOnMessageReceived();
-        var callback = new BotOnCallbackQueryReceived();
         var notProcessed = new BotOnNotProcessedReceived();
 
         var handler = update.Type switch
         {
             UpdateType.Message => message.Handler(update.Message, botClient),
-            UpdateType.CallbackQuery => callback.Handler(update.CallbackQuery, botClient),
+            UpdateType.CallbackQuery => BotOnCallbackQueryReceived.Handler(update.CallbackQuery, botClient),
 
             _ => notProcessed.Handler(update)
         };

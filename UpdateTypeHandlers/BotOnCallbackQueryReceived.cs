@@ -10,13 +10,13 @@ namespace botTelegram.UpdateTypeHandlers
 {
     internal class BotOnCallbackQueryReceived
     {
-        public async Task Handler(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        public static async Task Handler(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             Console.WriteLine(callbackQuery.From.FirstName + " " + callbackQuery.From.LastName + "   |   " + callbackQuery.Data);
 
             if (!ExtensionMethods.ExtensionMethods.CheckUserInDb(callbackQuery.From.Id))
             {
-                botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "В текущей версии бота, вы не авторизованы\nВведи имя под которым тебя многие узнают");
+                await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "В текущей версии бота, вы не авторизованы\nВведи имя под которым тебя многие узнают");
                 return;
             }
             string[] callbackQueryData = callbackQuery.Data.Split(':');
@@ -29,10 +29,20 @@ namespace botTelegram.UpdateTypeHandlers
                 "guestsEvents" => SendGuestList(callbackQuery, botClient),
                 "joinEvent" => RetressOnJoinEvent(callbackQuery, botClient),
                 "leaveEvent" => RetressOnLeaveEvent(callbackQuery, botClient),
-                "createEvent" => RetressOnCreatePassCheck(callbackQuery, botClient),
-                "deleteEvent" => RetressOnDeletePassCheck(callbackQuery, botClient),
+                "EventCreate" => EventInformationRequest(callbackQuery, botClient),
+                "EventDelete" => EventCodeRequest(callbackQuery, botClient),
                 "changeEventRank" => RetressOnChangeEventRank(callbackQuery, botClient),
                 "choiceEventRank" => ChangeEventRank(callbackQuery, botClient),
+                "adminButtons" => DisplayAdminButtons(callbackQuery, botClient),
+
+                /*
+                 * "changeTitleEvent"
+                 * "changeLocationEvent"
+                 * "changeDateEvent"
+                 * "changeTimeEvent"
+                 * "appointAdmin"
+                 * "removeGuest"
+                 */
 
                 _ => Task.CompletedTask
             };
@@ -41,7 +51,7 @@ namespace botTelegram.UpdateTypeHandlers
         }
 
 
-        async Task RetressOnChangeNick(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnChangeNick(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             using var db = new BeerDbContext();
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
@@ -51,7 +61,7 @@ namespace botTelegram.UpdateTypeHandlers
 
             user.SetStateAndSave(db, UserState.WaitingNick);
         }
-        async Task RetressOnChangeAboutMe(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnChangeAboutMe(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             using var db = new BeerDbContext();
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
@@ -61,7 +71,7 @@ namespace botTelegram.UpdateTypeHandlers
 
             user.SetStateAndSave(db, UserState.WaitingAboutMe);
         }
-        async Task RetressOnChangePhoto(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnChangePhoto(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             Console.WriteLine(callbackQuery.Message.Chat.FirstName + " | Пользователь меняет фото...");
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, $"Отправь мне свою новую фотку с разрешением не больше 512 х 512 пикселей.");
@@ -72,28 +82,28 @@ namespace botTelegram.UpdateTypeHandlers
             user.SetStateAndSave(db, UserState.WaitingPhoto);
         }
 
-        async Task SendGuestList(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task SendGuestList(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             string[] callbackQueryData = callbackQuery.Data.Split(':');
 
             using var db = new BeerDbContext();
             var @event = db.Events.First(e => e.Id == long.Parse(callbackQueryData[2]));
-            var listUsersEvents = db.Presences.Where(p => p.IdEvent == @event.Id);
-
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, $"~~~ ~~~ ~~~\nСписок участников мероприятия {@event.Title}:");
-            foreach (var t in listUsersEvents)
+
+            var listUsersEvents = db.Presences.Where(p => p.IdEvent == @event.Id);
+            foreach (var thisPresence in listUsersEvents)
             {
-                var user = db.Users.First(us => us.Id == t.IdUser);
+                var user = db.Users.First(u => u.Id == thisPresence.IdUser);
                 using (var fileStream = new FileStream(Path.GetFullPath(UpdateHendler.PathToPhoto(user.Id)), FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
                     await botClient.SendPhotoAsync(callbackQuery.Message.Chat.Id, photo: new Telegram.Bot.Types.InputFiles.InputOnlineFile(fileStream),
                         $"Имя: {user.Nickname}.\n" +
-                        $"Статус: {t.Rank.ToLocaleString()}.\n" +
+                        $"Статус: {thisPresence.Rank.ToLocaleString()}.\n" +
                         $"О себе:\n{user.AboutMe}.");
                 }
             }
         }
-        async Task RetressOnJoinEvent(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnJoinEvent(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Введи код мероприятия.");
             Console.WriteLine(callbackQuery.Message.Chat.FirstName + " | Сообщение отправленно...");
@@ -102,7 +112,7 @@ namespace botTelegram.UpdateTypeHandlers
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
             user.SetStateAndSave(db, UserState.WaitingJoinCode);
         }
-        async Task RetressOnLeaveEvent(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnLeaveEvent(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Введи код мероприятия.");
             Console.WriteLine(callbackQuery.Message.Chat.FirstName + " | Сообщение отправленно...");
@@ -111,26 +121,33 @@ namespace botTelegram.UpdateTypeHandlers
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
             user.SetStateAndSave(db, UserState.WainingLeaveCode);
         }
-        async Task RetressOnCreatePassCheck(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task EventInformationRequest(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
-            Console.WriteLine(callbackQuery.Message.Chat.FirstName + " | Запрос на код...");
-            await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Введите код подтверждающий что вы доверенное лицо.");
-
             using var db = new BeerDbContext();
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
-            user.SetStateAndSave(db, UserState.WaitingCreateEventCode);
+
+            await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Введи основную информацию следующим образом:\n(код придумай уникальный и запомни)\n \n" +
+                "[название]\n" +
+                "[дату]\n" +
+                "[код мероприятия]\n \n" +
+                "Сообщение должно выглядеть примерно вот так:");
+            await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id,
+                "Китайский новый год\n" +
+                "3.9.2077\n" +
+                "DavayMn3Sv0yC0d");
+
+            user.SetStateAndSave(db, UserState.WaitingInfoCreateEvent);
         }
-        async Task RetressOnDeletePassCheck(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task EventCodeRequest(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
-            Console.WriteLine(callbackQuery.Message.Chat.FirstName + " | Запрос на код...");
-
-            await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Введите код подтверждающий что вы доверенное лицо.");
-
             using var db = new BeerDbContext();
             var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
-            user.SetStateAndSave(db, UserState.WaitingDeleteEventCode);
+
+            await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Укажи код мероприятия.");
+
+            user.SetStateAndSave(db, UserState.WaitingRemovedEventCode);
         }
-        async Task RetressOnChangeEventRank(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task RetressOnChangeEventRank(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             string[] callbackQueryData = callbackQuery.Data.Split(':');
             string activeEventId = callbackQueryData[2];
@@ -149,7 +166,7 @@ namespace botTelegram.UpdateTypeHandlers
 
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Как ты настроен на это мероприятие.", replyMarkup: button);
         }
-        async Task ChangeEventRank(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        static async Task ChangeEventRank(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             using var db = new BeerDbContext();
 
@@ -170,6 +187,32 @@ namespace botTelegram.UpdateTypeHandlers
 
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, $"Теперь твой статус в {@event.Title} это {mutableLink.Rank.ToLocaleString()}");
             Console.WriteLine("Пользователь поменял статус на мероприятии...");
+        }
+        static async Task DisplayAdminButtons(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        {
+            using var db = new BeerDbContext();
+            string[] callbackQueryData = callbackQuery.Data.Split(':');
+
+            var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
+            var @event = db.Events.First(e => e.Id == long.Parse(callbackQueryData[2]));
+
+            InlineKeyboardMarkup button = new(new[]
+            {
+                new[] 
+                {
+                    InlineKeyboardButton.WithCallbackData("Название", $"changeTitleEvent:{user.Id}:{@event.Id}"),
+                    InlineKeyboardButton.WithCallbackData("Локацию", $"changeLocationEvent:{user.Id}:{@event.Id}")
+                },
+                new[] 
+                {
+                    InlineKeyboardButton.WithCallbackData("Дату", $"changeDateEvent:{user.Id}:{@event.Id}"),
+                    InlineKeyboardButton.WithCallbackData("Время", $"changeTimeEvent:{user.Id}:{@event.Id}")
+                },
+                new[] {InlineKeyboardButton.WithCallbackData("Назначить администратора", $"appointAdmin:{user.Id}:{@event.Id}")},
+                new[] {InlineKeyboardButton.WithCallbackData("Отстранить гостя", $"removeGuest:{user.Id}:{@event.Id}")}
+            });
+
+            await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Команды изменения мероприятия: {@event.Title}.\nЧто нужно изменить?", replyMarkup: button);
         }
     }
 }

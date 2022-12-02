@@ -6,11 +6,12 @@
         WaitingNick,
         WaitingJoinCode,
         WaitingAboutMe,
-        WaitingCreateEventCode,
+        NoUsing_WaitingCreateEventCode,
         WaitingInfoCreateEvent, 
         WainingLeaveCode, 
-        WaitingDeleteEventCode, 
-        WaitingInfoDeleteEvent, 
-        WaitingPhoto
+        NoUsing_WaitingDeleteEventCode, 
+        WaitingRemovedEventCode, 
+        WaitingPhoto,
+        WaitingAdminRassword
     }
 }
