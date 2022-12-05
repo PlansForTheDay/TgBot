@@ -6,12 +6,18 @@ using Telegram.Bot.Types;
 using Telegram.Bot;
 using User = botTelegram.Models.User;
 using botTelegram.UpdateHandler;
-
+using botTelegram.ExtensionMethods;
 
 namespace botTelegram.UpdateTypeHandlers
 {
     public class BotOnMessageReceived
     {
+        static Task NoProcessingType(Message message)
+        {
+            Console.Write("Необрабатываемый тип сообщения...\n => " + message.Type);
+            return Task.CompletedTask;
+        }
+
         async public Task Handler(Message message, ITelegramBotClient botClient)
         {
             Console.WriteLine(message.Chat.FirstName + " " + message.Chat.LastName + "   |   " + message.Text);
@@ -26,7 +32,7 @@ namespace botTelegram.UpdateTypeHandlers
                 MessageType.Sticker => StickerHandler(message, botClient),
                 MessageType.VideoNote => VideoNoteHandler(message, botClient),
 
-                _ => Task.CompletedTask
+                _ => NoProcessingType(message)
             };
             await messageHandler;
         }
@@ -50,7 +56,7 @@ namespace botTelegram.UpdateTypeHandlers
                     "/back" => BackTextCommand(message, botClient),
                     "/admin_panel" => AdminPanelTextCommand(message, botClient),
 
-                    _ => botClient.SendTextMessageAsync(message.Chat.Id, "Такого не знаем(.")
+                    _ => botClient.SendTextMessageAsync(message.Chat.Id, "Такого не знаем.")
                 };
 
                 await textCommandHendler;
@@ -58,8 +64,8 @@ namespace botTelegram.UpdateTypeHandlers
             }
 
             using var db = new BeerDbContext();
-            var user = db.Users.FirstOrDefault(u => u.Id == message.From.Id);
-            string password = "PASSWORD";
+            var user = db.Users.First(u => u.Id == message.From.Id);
+            string password = "pass";
 
             var textHendler = user.State switch
             {
@@ -71,6 +77,8 @@ namespace botTelegram.UpdateTypeHandlers
 
                 UserState.WaitingInfoCreateEvent => CreateEvent(message, botClient),
                 UserState.WaitingRemovedEventCode => DeleteEvent(message, botClient),
+
+                UserState.WaitingChangeEvent => ChangeEvent(message, botClient),
 
                 _ => botClient.SendTextMessageAsync(message.From.Id, "Ну и что ты только что сказал?\nТы в меню и я не жду от тебя сообщения.")
             };
@@ -92,57 +100,47 @@ namespace botTelegram.UpdateTypeHandlers
         {
             Console.WriteLine(message.Chat.FirstName + " | Пользователь решил узнать информацию о себе...");
 
-            using (BeerDbContext db = new BeerDbContext())
-            {
-                User user = db.Users.FirstOrDefault(u => u.Id == message.From.Id);
+            using var db = new BeerDbContext();
+            User user = db.Users.First(u => u.Id == message.From.Id);
 
-                InlineKeyboardMarkup button = new(new[]
-                {
-                new[]
-                        {
-                    InlineKeyboardButton.WithCallbackData("Изменить имя", $"changeNickname:{user.Id}")
-                },
-                new[]
-                        {
-                    InlineKeyboardButton.WithCallbackData("Изменить о себе", $"changeAboutMe:{user.Id}")
-                },
-                new[]
-                        {
-                    InlineKeyboardButton.WithCallbackData("Изменить фото", $"changePhoto:{user.Id}")
-                }
+            InlineKeyboardMarkup button = new(new[]
+            {
+                new[] {InlineKeyboardButton.WithCallbackData("Изменить имя", $"changeNickname:{user.Id}")},
+                new[] {InlineKeyboardButton.WithCallbackData("Изменить о себе", $"changeAboutMe:{user.Id}")},
+                new[] {InlineKeyboardButton.WithCallbackData("Изменить фото", $"changePhoto:{user.Id}")}
             });
 
-                using (var fileStream = new FileStream(Path.GetFullPath(UpdateHendler.PathToPhoto(user.Id)), FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    await botClient.SendPhotoAsync(message.Chat.Id, photo: new Telegram.Bot.Types.InputFiles.InputOnlineFile(fileStream),
-                    //$"Информация о пользователе: \n" +
-                    $"| Ваше имя - {user.Nickname}.\n" +
-                    $"| Ваш ID - {user.Id}.\n" +
-                    $"| О вас -\n {user.AboutMe}.", replyMarkup: button);
-                }
-                user.SetStateAndSave(db, UserState.Menu);
+            using (var fileStream = new FileStream(Path.GetFullPath(UpdateHendler.PathToPhoto(user.Id)), FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                await botClient.SendPhotoAsync(message.Chat.Id, photo: new Telegram.Bot.Types.InputFiles.InputOnlineFile(fileStream),
+                //$"Информация о пользователе: \n" +
+                $"| Ваше имя - {user.Nickname}.\n" +
+                $"| Ваш ID - {user.Id}.\n" +
+                $"| О вас -\n {user.AboutMe}", replyMarkup: button);
             }
+            user.SetStateAndSave(db, UserState.Menu);
         }
         async Task EventsTextCommand(Message message, ITelegramBotClient botClient)
         {
-            await botClient.SendTextMessageAsync(message.Chat.Id, "Вот мероприятия на которые ты планируешь прийти и панель взаимодействия с ними:");
+            Console.WriteLine("Пользователь просмотривает мероприятия...");
             try
             {
                 await using var db = new BeerDbContext();
                 User user = db.Users.First(u => u.Id == message.From.Id);
 
                 IQueryable<Presence> presence = db.Presences.Where(e => e.IdUser == user.Id);
-                if (presence.First() != null)
+                if (presence != null)
                 {
-                    Console.WriteLine("Пользователь просмотривает мероприятия...");
-
-                    foreach (var i in presence)
+                    await botClient.SendTextMessageAsync(message.Chat.Id, "Вот мероприятия на которые ты планируешь прийти и панель взаимодействия с ними:");
+                    foreach (var thisPresence in presence)
                     {
-                        UpdateHendler.SendListEvent(i, message, botClient);
+                        SendListEvent(thisPresence, message, botClient);
                     }
                 }
-                else
+                if (presence == null)
+                { 
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Тебя нет ни на одном мероприятии.");
+                }
 
                 InlineKeyboardMarkup button = new(new[]
                 {
@@ -166,16 +164,44 @@ namespace botTelegram.UpdateTypeHandlers
                 Console.WriteLine("Ошибка...\n" + ex);
             }
         }
+        public async static void SendListEvent(Presence presence, Message message, ITelegramBotClient botClient)
+        {
+            using var db = new BeerDbContext();
+            var @event = db.Events.First(e => e.Id == presence.IdEvent);
+            var user = db.Users.First(u => u.Id == presence.IdUser);
+
+            InlineKeyboardMarkup button = presence.Rank switch
+            {
+                Rank.Administrator => new(new[]
+                {
+                    new [] {InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")},
+                    new [] {InlineKeyboardButton.WithCallbackData("Редактировать мероприятие", $"adminButtons:{user.Id}:{@event.Id}")}
+                }),
+
+                _ => new(new[]
+                {
+                    new [] {InlineKeyboardButton.WithCallbackData("Гости", $"guestsEvents:{user.Id}:{@event.Id}")},
+                    new [] {InlineKeyboardButton.WithCallbackData("Изменить статус", $"changeEventRank:{user.Id}:{@event.Id}")}
+                })
+            };
+
+            await botClient.SendTextMessageAsync(message.Chat.Id,
+                 $"Название: {@event.Title}\n" +
+                 $"Дата: {@event.Start.ToLongDateString()}\n" +
+                 $"Время: {@event.Start.ToShortTimeString()}\n" +
+                 $"Локация: {@event.Location}\n"+
+                 $"Код присоединения: {@event.Code}\n" +
+                 $"Статус на мероприятии: {presence.Rank.ToLocaleString()}", replyMarkup: button);
+        }
+
         async Task BackTextCommand(Message message, ITelegramBotClient botClient)
         {
-            using (BeerDbContext db = new BeerDbContext())
-            {
-                Console.WriteLine(message.Chat.FirstName + " | Возврат в меню...");
-                await botClient.SendTextMessageAsync(message.From.Id, "Вы вернулись в меню");           //желательно сделать всплывающим сообщением а не обычным
+            using var db = new BeerDbContext();
+            Console.WriteLine(message.Chat.FirstName + " | Возврат в меню...");
+            await botClient.SendTextMessageAsync(message.From.Id, "Вы вернулись в меню");           //желательно сделать всплывающим сообщением а не обычным
 
-                User user = db.Users.FirstOrDefault(u => u.Id == message.From.Id);
-                user.SetStateAndSave(db, UserState.Menu);
-            }
+            User user = db.Users.First(u => u.Id == message.From.Id);
+            user.SetStateAndSave(db, UserState.Menu);
         }
         async Task AdminPanelTextCommand(Message message, ITelegramBotClient botClient)
         {
@@ -188,16 +214,14 @@ namespace botTelegram.UpdateTypeHandlers
 
         async Task ChangeNick(Message message, ITelegramBotClient botClient)
         {
-            using (BeerDbContext db = new BeerDbContext())
-            {
-                var user = db.Users.FirstOrDefault(db => db.Id == message.From.Id);
-                user.Nickname = message.Text;
-                user.State = UserState.Menu;
-                db.SaveChanges();
+            using var db = new BeerDbContext();
+            var user = db.Users.First(db => db.Id == message.From.Id);
+            user.Nickname = message.Text;
+            user.State = UserState.Menu;
+            db.SaveChanges();
 
-                await botClient.SendTextMessageAsync(message.Chat.Id, $"Теперь все тебя знают как '{user.Nickname}'.");
-                Console.WriteLine(message.Chat.FirstName + " | Пользователь поменял ник...");
-            }
+            await botClient.SendTextMessageAsync(message.Chat.Id, $"Теперь все тебя знают как '{user.Nickname}'.");
+            Console.WriteLine(message.Chat.FirstName + " | Пользователь поменял ник...");
         }
         async Task ChangeAboutMe(Message message, ITelegramBotClient botClient)
         {
@@ -205,7 +229,7 @@ namespace botTelegram.UpdateTypeHandlers
 
             using var db = new BeerDbContext();
 
-            User user = db.Users.FirstOrDefault(db => db.Id == message.From.Id);
+            User user = db.Users.First(db => db.Id == message.From.Id);
             user.AboutMe = message.Text;
             db.SaveChanges();
 
@@ -263,7 +287,7 @@ namespace botTelegram.UpdateTypeHandlers
             }
             Console.WriteLine(message.Chat.FirstName + " | Верный код мероприятия...");
 
-            var user = db.Users.FirstOrDefault(db => db.Id == message.From.Id);
+            var user = db.Users.First(db => db.Id == message.From.Id);
             var w = db.Presences.FirstOrDefault(t => t.IdUser == user.Id && t.IdEvent == even.Id);
             if (w != null)
             {
@@ -348,8 +372,8 @@ namespace botTelegram.UpdateTypeHandlers
                 };
 
                 db.Presences.Add(newPresece);
-
                 db.SaveChanges();
+                
                 user.SetStateAndSave(db, UserState.Menu);
 
                 Console.WriteLine($"Мероприятие '{@event.Title}' создано...");
@@ -369,7 +393,7 @@ namespace botTelegram.UpdateTypeHandlers
             var user = db.Users.First(u => u.Id == message.From.Id);
             try
             {
-                Event @event = db.Events.First(e => e.Code == message.Text);
+                var @event = db.Events.FirstOrDefault(e => e.Code == message.Text);
                 if (@event == null)
                 {
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Мероприятие не найдено.\nВозврат в меню.");
@@ -397,14 +421,104 @@ namespace botTelegram.UpdateTypeHandlers
             }
             user.SetStateAndSave(db, UserState.Menu);
         }
+        async Task ChangeEvent(Message message, ITelegramBotClient botClient)
+        {
+            using var db = new BeerDbContext();
+            var user = db.Users.First(db => db.Id == message.From.Id);
 
+            try
+            {
+                string path = $"event_change_files\\{user.Id}.txt";
+                string stringParameter = "";
+
+                using (StreamReader streamReader = System.IO.File.OpenText(path))
+                {
+                    stringParameter = streamReader.ReadLine();
+                };
+
+                if (stringParameter == null)
+                {
+                    Console.WriteLine($"Файл пусной...\n{path}");
+                    await botClient.SendTextMessageAsync(message.From.Id, "Нужный файл не найден.\nВозврат в меню.");
+                    user.SetStateAndSave(db, UserState.Menu);
+                    return;
+                }
+
+                string[] @object = stringParameter.Split('.');
+                var @event = db.Events.First(e => e.Id == long.Parse(@object[0]));
+
+
+                if (@object[1] == "Date")
+                {
+
+                    string[] oldDateTime = @event.Start.ToString().Split(" ");
+                    int[] newDate = message.Text.Split('.').Select(x => int.Parse(x)).ToArray();
+                    int[] oldTime = oldDateTime[1].Split(':').Select(x => int.Parse(x)).ToArray();
+
+
+                    @event.Start = new DateTime(newDate[2], newDate[1], newDate[0], oldTime[0], oldTime[1], oldTime[2]);
+
+                    db.SaveChanges();
+                    user.SetStateAndSave(db, UserState.Menu);
+
+                    await botClient.SendTextMessageAsync(message.From.Id, $"Дата обновлена.\n{@event.Start.ToLongDateString()}");
+                    Console.WriteLine($"Дата обновлена...");
+                    return;
+                }
+                else if (@object[1] == "Time")
+                {
+                    string[] oldDateTime = @event.Start.ToString().Split(" ");
+                    int[] newTime = message.Text.Split(':').Select(x => int.Parse(x)).ToArray();
+                    int[] oldDate = oldDateTime[0].Split('.').Select(x => int.Parse(x)).ToArray();
+
+                    @event.Start = new DateTime(oldDate[2], oldDate[1], oldDate[0], newTime[0], newTime[1],0);
+
+                    db.SaveChanges();
+                    user.SetStateAndSave(db, UserState.Menu);
+
+                    await botClient.SendTextMessageAsync(message.From.Id, $"Время обновлено.\n{@event.Start.ToShortTimeString()}");
+                    Console.WriteLine($"Время обновлено...");
+                    return;
+                }
+                else
+                {
+                    var changeInfo = @object[1] switch
+                    {
+                        "Title" => @event.Title = message.Text,
+                        "Location" => @event.Location = message.Text,
+
+                        _ => "NoProcessing"
+                    };
+
+                    if (changeInfo == "NoProcessing")
+                    {
+                        Console.WriteLine($"Ошибка обработки...");
+                        await botClient.SendTextMessageAsync(message.From.Id, "Проблема обработки.\nВозврат в меню.");
+                        user.SetStateAndSave(db, UserState.Menu);
+                        return;
+                    }
+
+                    await botClient.SendTextMessageAsync(message.From.Id, "Обновлено.\nВозврат в меню.");
+
+                    db.SaveChanges();
+                    user.SetStateAndSave(db, UserState.Menu);
+                }
+                System.IO.File.Delete(path);
+            }
+            catch(Exception ex)
+            {
+                user.SetStateAndSave(db, UserState.Menu);
+                await botClient.SendTextMessageAsync(message.From.Id, "Ошибка, это может быть связяно с некоректным вводом даты или времени.\nВозврат в меню.");
+                Console.WriteLine("Ошибка...\n" + ex);
+            }
+        }
 
 
         async Task PhotoHandler(Message message, ITelegramBotClient botClient)
         {
             Console.WriteLine("Пользователь отправил фото...");
             using var db = new BeerDbContext();
-            var user = db.Users.FirstOrDefault(u => u.Id == message.From.Id);
+            var user = db.Users.First(u => u.Id == message.From.Id);
             if (!Directory.Exists("user_photo"))
             {
                 await botClient.SendTextMessageAsync(message.From.Id, "Возникли технические шоколадки и пока что у меня нет возможности работать с фото.");

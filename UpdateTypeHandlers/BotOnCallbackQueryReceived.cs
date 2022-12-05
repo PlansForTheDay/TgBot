@@ -5,11 +5,20 @@ using Telegram.Bot.Types.ReplyMarkups;
 using Telegram.Bot.Types;
 using Telegram.Bot;
 using botTelegram.ExtensionMethods;
+using System.Runtime.CompilerServices;
+using System.IO;
+using System.Text;
 
 namespace botTelegram.UpdateTypeHandlers
 {
     internal class BotOnCallbackQueryReceived
     {
+        static async Task NoProcessedButton(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        {
+            await botClient.SendTextMessageAsync(callbackQuery.From.Id, "Неизвестная кнопка.");
+            Console.Write("Ошибка определения кнопки...");
+        }
+
         public static async Task Handler(CallbackQuery callbackQuery, ITelegramBotClient botClient)
         {
             Console.WriteLine(callbackQuery.From.FirstName + " " + callbackQuery.From.LastName + "   |   " + callbackQuery.Data);
@@ -35,16 +44,16 @@ namespace botTelegram.UpdateTypeHandlers
                 "choiceEventRank" => ChangeEventRank(callbackQuery, botClient),
                 "adminButtons" => DisplayAdminButtons(callbackQuery, botClient),
 
-                /*
-                 * "changeTitleEvent"
-                 * "changeLocationEvent"
-                 * "changeDateEvent"
-                 * "changeTimeEvent"
-                 * "appointAdmin"
-                 * "removeGuest"
-                 */
 
-                _ => Task.CompletedTask
+                "changeTitleEvent" => RetressOnChangeEvent(callbackQuery, botClient),
+                "changeLocationEvent" => RetressOnChangeEvent(callbackQuery, botClient),
+                "changeDateEvent" => RetressOnChangeEvent(callbackQuery, botClient),
+                "changeTimeEvent" => RetressOnChangeEvent(callbackQuery, botClient),
+                //"appointAdmin"
+                //"removeGuest"
+                 
+
+                _ => NoProcessedButton(callbackQuery, botClient)
             };
 
             await callbackQueryHandler;
@@ -154,15 +163,15 @@ namespace botTelegram.UpdateTypeHandlers
 
             InlineKeyboardMarkup button = new(new[]
             {
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData("Я пойду", $"choiceEventRank:{callbackQuery.From.Id}:{activeEventId}:Member")
-            },
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData("Мне нужно подумать", $"choiceEventRank:{callbackQuery.From.Id}:{activeEventId}:Doubting")
-            }
-        });
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Я пойду", $"choiceEventRank:{callbackQuery.From.Id}:{activeEventId}:Member")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Мне нужно подумать", $"choiceEventRank:{callbackQuery.From.Id}:{activeEventId}:Doubting")
+                }
+            });
 
             await botClient.SendTextMessageAsync(callbackQuery.Message.Chat.Id, "Как ты настроен на это мероприятие.", replyMarkup: button);
         }
@@ -213,6 +222,48 @@ namespace botTelegram.UpdateTypeHandlers
             });
 
             await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Команды изменения мероприятия: {@event.Title}.\nЧто нужно изменить?", replyMarkup: button);
+        }
+        static async Task RetressOnChangeEvent(CallbackQuery callbackQuery, ITelegramBotClient botClient)
+        {
+            using var db = new BeerDbContext();
+            string[] callbackQueryData = callbackQuery.Data.Split(':');
+            var user = db.Users.First(u => u.Id == callbackQuery.From.Id);
+            var @event = db.Events.First(e => e.Id == long.Parse(callbackQueryData[2]));
+
+            string eventParameter = callbackQueryData[0] switch
+            {
+                "changeTitleEvent" => $"{@event.Id}.Title",
+                "changeLocationEvent" => $"{@event.Id}.Location",
+                "changeDateEvent" => $"{@event.Id}.Date",
+                "changeTimeEvent" => $"{@event.Id}.Time",
+
+                _ => "NoProcessedButton"
+            };
+
+            if (eventParameter == "NoProcessedButton")
+            {
+                await NoProcessedButton(callbackQuery, botClient);
+                user.SetStateAndSave(db, UserState.Menu);
+                return;
+            }
+
+            string path = $"event_change_files\\{user.Id}.txt";
+
+            using (FileStream fileStream = System.IO.File.Create(path, 1024))
+            {
+                byte[] parameter = new UTF8Encoding(true).GetBytes(eventParameter);
+                fileStream.Write(parameter, 0, parameter.Length);
+            }
+
+            var chatInstruction = callbackQueryData[0] switch
+            {
+                "changeTitleEvent" => await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Введи новое название мероприятия \n{@event.Title}"),
+                "changeLocationEvent" => await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Введи новую локацию мероприятия \n{@event.Title}"),
+                "changeDateEvent" => await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Введи новую дату мероприятия \n{@event.Title}\nПример: [12.2.1981]"),
+                "changeTimeEvent" => await botClient.SendTextMessageAsync(callbackQuery.From.Id, $"Введи новое время мероприятия \n{@event.Title}\nПример: [15:30]")
+            };
+
+            user.SetStateAndSave(db, UserState.WaitingChangeEvent);
         }
     }
 }

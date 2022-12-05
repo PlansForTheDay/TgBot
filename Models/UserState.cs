@@ -6,7 +6,7 @@
         WaitingNick,
         WaitingJoinCode,
         WaitingAboutMe,
-        NoUsing_WaitingCreateEventCode,
+        WaitingChangeEvent,
         WaitingInfoCreateEvent, 
         WainingLeaveCode, 
         NoUsing_WaitingDeleteEventCode, 
